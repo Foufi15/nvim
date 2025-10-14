@@ -2,11 +2,11 @@ return {
   "neovim/nvim-lspconfig",
   opts = {
     servers = {
-      -- java
+      --java
       jdtls = {},
 
       --python
-      pyright = {},
+      pyrights = {},
     },
   },
 }
