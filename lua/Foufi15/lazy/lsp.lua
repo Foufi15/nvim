@@ -120,6 +120,7 @@ return {
 				markdown = { "prettier" },
 				lua = { "stylua" },
 				c = { "clang-format" },
+				rust = { "rustfmt" },
 				cpp = { "clang-format" },
 				python = { "ruff_organize_imports", "ruff_format" },
 			},
