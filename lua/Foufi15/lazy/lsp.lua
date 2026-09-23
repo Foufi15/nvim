@@ -42,13 +42,29 @@ return {
 		-- ====================================================================
 		require("mason").setup()
 
+		-- Outils sans binaire Mason pour la plateforme : installés par le
+		-- gestionnaire de paquets du système (voir install.sh)
+		local uname = vim.uv.os_uname()
+		local system_only = {}
+		if vim.uv.fs_stat("/etc/alpine-release") then -- Alpine (musl)
+			system_only = { lua_ls = true, clangd = true, ruff = true, stylua = true }
+		elseif uname.sysname == "Linux" and uname.machine == "aarch64" then
+			system_only = { clangd = true }
+		end
+
+		local function without_system_only(list)
+			return vim.tbl_filter(function(name)
+				return not system_only[name]
+			end, list)
+		end
+
 		require("mason-tool-installer").setup({
-			ensure_installed = {
+			ensure_installed = without_system_only({
 				"prettier", -- Web
 				"stylua", -- Lua
 				"ruff", -- Python
 				"clang-format", -- C/C++
-			},
+			}),
 		})
 
 		-- Neovim 0.11+ / mason-lspconfig v2 : l'option `handlers` n'existe plus.
@@ -85,7 +101,7 @@ return {
 		})
 
 		require("mason-lspconfig").setup({
-			ensure_installed = {
+			ensure_installed = without_system_only({
 				"lua_ls",
 				"ts_ls",
 				"html",
@@ -94,10 +110,18 @@ return {
 				"pyright",
 				"ruff",
 				"clangd",
-			},
+			}),
 			-- rust_analyzer est géré par rustaceanvim
 			automatic_enable = { exclude = { "rust_analyzer" } },
 		})
+
+		-- Serveurs installés par le système (hors Mason) : on les active nous-mêmes
+		for server in pairs(system_only) do
+			local cmd = vim.lsp.config[server] and vim.lsp.config[server].cmd
+			if type(cmd) == "table" and vim.fn.executable(cmd[1]) == 1 then
+				vim.lsp.enable(server)
+			end
+		end
 
 		-- ====================================================================
 		-- ÉTAPE 3 : FORMATAGE (CONFORM)

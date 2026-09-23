@@ -12,6 +12,8 @@ curl -fsSL https://raw.githubusercontent.com/Foufi15/nvim/main/install.sh | bash
 
 Le script installe toutes les dépendances (Neovim ≥ 0.11, git, compilateur C, ripgrep, fd, Node.js, Python, Rust, tree-sitter CLI, Nerd Font…), clone la config dans `~/.config/nvim` (l'ancienne est sauvegardée en `nvim.bak.<date>`), puis installe les plugins, les LSP et les parsers.
 
+> **Alpine** : `bash` et `curl` ne sont pas installés par défaut, lance d'abord `apk add bash curl`.
+
 Pour passer des options avec `curl | bash` :
 
 ```bash

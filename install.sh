@@ -99,14 +99,20 @@ as_root() {
 	fi
 }
 
-download() { # download URL DEST
-	if has curl; then
-		curl -fsSL --retry 3 -o "$2" "$1"
-	elif has wget; then
-		wget -qO "$2" "$1"
-	else
-		die "Ni curl ni wget n'est disponible."
-	fi
+download() { # download URL DEST (3 tentatives, pour les coupures réseau)
+	local attempt
+	for attempt in 1 2 3; do
+		if has curl; then
+			curl -fsSL --retry 3 -o "$2" "$1" && return 0
+		elif has wget; then
+			wget -qO "$2" "$1" && return 0
+		else
+			die "Ni curl ni wget n'est disponible."
+		fi
+		warn "Échec du téléchargement de $1 (tentative $attempt/3)"
+		sleep 2
+	done
+	return 1
 }
 
 TMP_DIR="$(mktemp -d)"
@@ -207,9 +213,19 @@ install_system_packages() {
 			as_root apk update
 			as_root apk add \
 				bash git curl wget unzip tar gzip xz build-base ripgrep fd python3 py3-pip \
-				nodejs npm xclip wl-clipboard tmux fontconfig neovim tree-sitter-cli
+				nodejs npm xclip wl-clipboard tmux fontconfig neovim tree-sitter-cli \
+				lua-language-server clang-extra-tools stylua ruff # pas de binaires Mason pour musl
 			;;
 	esac
+	# Mason n'a pas de clangd pour Linux ARM64 → paquet du système
+	if [ "$OS" = "Linux" ] && [ "$ARCH" = "arm64" ]; then
+		case "$PM" in
+			apt) as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y clangd ;;
+			dnf|yum) as_root "$PM" install -y clang-tools-extra ;;
+			pacman) as_root pacman -S --needed --noconfirm clang ;;
+			zypper) as_root zypper --non-interactive install -y clang-tools ;;
+		esac
+	fi
 	ok "Paquets système installés"
 }
 
@@ -331,7 +347,7 @@ install_rust() {
 install_font() {
 	step "Nerd Font ($NERD_FONT)"
 	if [ "$OS" = "Darwin" ]; then
-		brew install --cask font-jetbrains-mono-nerd-font
+		brew install --cask font-jetbrains-mono-nerd-font || return 1
 	else
 		local dir="$HOME/.local/share/fonts/${NERD_FONT}NerdFont"
 		if [ -d "$dir" ] && ls "$dir"/*.ttf >/dev/null 2>&1; then
@@ -340,8 +356,8 @@ install_font() {
 		fi
 		mkdir -p "$dir"
 		download "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/${NERD_FONT}.tar.xz" \
-			"$TMP_DIR/font.tar.xz"
-		tar -xJf "$TMP_DIR/font.tar.xz" -C "$dir"
+			"$TMP_DIR/font.tar.xz" || return 1
+		tar -xJf "$TMP_DIR/font.tar.xz" -C "$dir" || return 1
 		has fc-cache && fc-cache -f "$dir" >/dev/null
 	fi
 	ok "Police installée → choisis « JetBrainsMono Nerd Font » dans ton terminal"
@@ -407,8 +423,13 @@ install_nvim_plugins() {
 
 	step "LSP & formatters (Mason)"
 	# En mode headless, :MasonInstall est bloquant jusqu'à la fin des installations
-	nvim --headless -c "MasonInstall lua-language-server typescript-language-server html-lsp \
-css-lsp tailwindcss-language-server pyright ruff clangd prettier stylua clang-format" -c qa \
+	local mason_pkgs="typescript-language-server html-lsp css-lsp tailwindcss-language-server \
+pyright prettier clang-format"
+	# Sur Alpine, lua-language-server/clangd/ruff/stylua viennent d'apk
+	[ "$PM" = "apk" ] || mason_pkgs="$mason_pkgs lua-language-server ruff stylua"
+	# Sur Linux ARM64, clangd vient du gestionnaire de paquets
+	[ "$PM" = "apk" ] || { [ "$OS" = "Linux" ] && [ "$ARCH" = "arm64" ]; } || mason_pkgs="$mason_pkgs clangd"
+	nvim --headless -c "MasonInstall $mason_pkgs" -c qa \
 		|| warn "Certains outils Mason ont échoué (relance :Mason dans Neovim)"
 	ok "Outils Mason installés"
 
@@ -429,7 +450,10 @@ install_neovim
 install_node
 [ "$INSTALL_RUST" -eq 1 ] && install_rust
 install_tree_sitter_cli
-[ "$INSTALL_FONT" -eq 1 ] && install_font
+# La police est facultative : un échec ne doit pas bloquer le reste
+if [ "$INSTALL_FONT" -eq 1 ]; then
+	install_font || warn "Police non installée (relance plus tard ou installe-la à la main)"
+fi
 setup_config
 setup_path
 [ "$INSTALL_PLUGINS" -eq 1 ] && install_nvim_plugins
