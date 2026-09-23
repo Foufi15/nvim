@@ -8,7 +8,9 @@
 #
 # Usage :
 #   ./install.sh                  # installation complète
+#   ./install.sh --font FiraCode  # choisit la Nerd Font (sinon : menu interactif)
 #   ./install.sh --no-font        # sans la Nerd Font
+#   ./install.sh --yes            # aucune question (police par défaut : JetBrainsMono)
 #   ./install.sh --no-rust        # sans rustup / rust-analyzer
 #   ./install.sh --skip-plugins   # n'installe pas les plugins/LSP dans Neovim
 #   curl -fsSL https://raw.githubusercontent.com/Foufi15/nvim/main/install.sh | bash
@@ -20,13 +22,16 @@ REPO_URL="https://github.com/Foufi15/nvim.git"
 NVIM_MIN_VERSION="0.11.0"
 NODE_MIN_MAJOR=18
 NODE_LTS_CHANNEL="latest-v24.x"
-NERD_FONT="JetBrainsMono"
+NERD_FONT=""                  # vide → menu interactif (défaut : JetBrainsMono)
+NERD_FONT_DEFAULT="JetBrainsMono"
+NERD_FONTS="JetBrainsMono FiraCode Hack Meslo CascadiaCode Iosevka SourceCodePro UbuntuMono"
 LOCAL_BIN="$HOME/.local/bin"
 LOCAL_OPT="$HOME/.local/opt"
 
 INSTALL_FONT=1
 INSTALL_RUST=1
 INSTALL_PLUGINS=1
+ASSUME_YES=0
 
 # ------------------------------------------------------------------------------
 # Affichage
@@ -44,18 +49,23 @@ warn() { printf '%s  ! %s%s\n' "$C_YELLOW" "$*" "$C_RESET"; }
 die()  { printf '%s  ✘ %s%s\n' "$C_RED" "$*" "$C_RESET" >&2; exit 1; }
 
 usage() {
-	sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+	sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'
+	echo "Polices disponibles : $NERD_FONTS"
 	exit 0
 }
 
-for arg in "$@"; do
-	case "$arg" in
+while [ $# -gt 0 ]; do
+	case "$1" in
+		--font) [ $# -ge 2 ] || die "--font attend un nom de police"; NERD_FONT="$2"; shift ;;
+		--font=*) NERD_FONT="${1#--font=}" ;;
 		--no-font) INSTALL_FONT=0 ;;
 		--no-rust) INSTALL_RUST=0 ;;
 		--skip-plugins) INSTALL_PLUGINS=0 ;;
+		-y|--yes) ASSUME_YES=1 ;;
 		-h|--help) usage ;;
-		*) die "Option inconnue : $arg (voir --help)" ;;
+		*) die "Option inconnue : $1 (voir --help)" ;;
 	esac
+	shift
 done
 
 # ------------------------------------------------------------------------------
@@ -344,10 +354,66 @@ install_rust() {
 # ------------------------------------------------------------------------------
 # 6. Nerd Font (icônes neo-tree, bufferline, devicons)
 # ------------------------------------------------------------------------------
+# font_info NOM → FONT_CASK (Homebrew) et FONT_LABEL (nom à choisir dans le terminal)
+font_info() {
+	case "$1" in
+		JetBrainsMono) FONT_CASK="font-jetbrains-mono-nerd-font"; FONT_LABEL="JetBrainsMono Nerd Font" ;;
+		FiraCode) FONT_CASK="font-fira-code-nerd-font"; FONT_LABEL="FiraCode Nerd Font" ;;
+		Hack) FONT_CASK="font-hack-nerd-font"; FONT_LABEL="Hack Nerd Font" ;;
+		Meslo) FONT_CASK="font-meslo-lg-nerd-font"; FONT_LABEL="MesloLGS Nerd Font" ;;
+		CascadiaCode) FONT_CASK="font-caskaydia-cove-nerd-font"; FONT_LABEL="CaskaydiaCove Nerd Font" ;;
+		Iosevka) FONT_CASK="font-iosevka-nerd-font"; FONT_LABEL="Iosevka Nerd Font" ;;
+		SourceCodePro) FONT_CASK="font-sauce-code-pro-nerd-font"; FONT_LABEL="SauceCodePro Nerd Font" ;;
+		UbuntuMono) FONT_CASK="font-ubuntu-mono-nerd-font"; FONT_LABEL="UbuntuMono Nerd Font" ;;
+		*) return 1 ;;
+	esac
+}
+
+# Menu de choix de la police (lit /dev/tty pour marcher aussi avec curl | bash)
+choose_font() {
+	if [ -n "$NERD_FONT" ]; then
+		font_info "$NERD_FONT" || die "Police inconnue : $NERD_FONT (choix : $NERD_FONTS)"
+		return
+	fi
+	NERD_FONT="$NERD_FONT_DEFAULT"
+	if [ "$ASSUME_YES" -eq 1 ] || ! { : </dev/tty; } 2>/dev/null; then
+		font_info "$NERD_FONT"
+		return
+	fi
+
+	step "Quelle Nerd Font installer ?"
+	local i=1 name
+	for name in $NERD_FONTS; do
+		font_info "$name"
+		printf '  %d) %s\n' "$i" "$FONT_LABEL"
+		i=$((i + 1))
+	done
+	printf '  %d) Aucune\n' "$i"
+
+	local choice
+	printf 'Choix [1] : '
+	read -r choice </dev/tty || choice=""
+	choice="${choice:-1}"
+	if [ "$choice" = "$i" ]; then
+		INSTALL_FONT=0
+		return
+	fi
+	i=1
+	for name in $NERD_FONTS; do
+		if [ "$choice" = "$i" ] || [ "$choice" = "$name" ]; then
+			NERD_FONT="$name"
+			break
+		fi
+		i=$((i + 1))
+	done
+	font_info "$NERD_FONT"
+	ok "Police choisie : $FONT_LABEL"
+}
+
 install_font() {
-	step "Nerd Font ($NERD_FONT)"
+	step "Nerd Font ($FONT_LABEL)"
 	if [ "$OS" = "Darwin" ]; then
-		brew install --cask font-jetbrains-mono-nerd-font || return 1
+		brew install --cask "$FONT_CASK" || return 1
 	else
 		local dir="$HOME/.local/share/fonts/${NERD_FONT}NerdFont"
 		if [ -d "$dir" ] && ls "$dir"/*.ttf >/dev/null 2>&1; then
@@ -360,7 +426,7 @@ install_font() {
 		tar -xJf "$TMP_DIR/font.tar.xz" -C "$dir" || return 1
 		has fc-cache && fc-cache -f "$dir" >/dev/null
 	fi
-	ok "Police installée → choisis « JetBrainsMono Nerd Font » dans ton terminal"
+	ok "Police installée → choisis « $FONT_LABEL » dans ton terminal"
 }
 
 # ------------------------------------------------------------------------------
@@ -445,6 +511,7 @@ else vim.cmd('TSUpdateSync') end" -c qa \
 # ------------------------------------------------------------------------------
 # Exécution
 # ------------------------------------------------------------------------------
+[ "$INSTALL_FONT" -eq 1 ] && choose_font # on pose la question avant les longues installations
 install_system_packages
 install_neovim
 install_node
@@ -461,5 +528,5 @@ setup_path
 step "Terminé 🎉"
 echo "  • Ouvre un nouveau terminal (ou : source ~/.zshrc / ~/.bashrc)"
 echo "  • Lance : nvim   puis :checkhealth pour vérifier"
-[ "$INSTALL_FONT" -eq 1 ] && echo "  • Configure ton terminal avec la police « JetBrainsMono Nerd Font »"
+[ "$INSTALL_FONT" -eq 1 ] && echo "  • Configure ton terminal avec la police « $FONT_LABEL »"
 exit 0
