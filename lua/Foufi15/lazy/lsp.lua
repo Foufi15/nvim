@@ -51,6 +51,39 @@ return {
 			},
 		})
 
+		-- Neovim 0.11+ / mason-lspconfig v2 : l'option `handlers` n'existe plus.
+		-- On configure les serveurs avec vim.lsp.config, puis mason-lspconfig
+		-- les active automatiquement (automatic_enable).
+		vim.lsp.config("*", {
+			capabilities = capabilities,
+		})
+
+		vim.lsp.config("ruff", {
+			on_attach = function(client)
+				client.server_capabilities.hoverProvider = false
+			end,
+		})
+
+		vim.lsp.config("pyright", {
+			settings = {
+				python = {
+					analysis = {
+						typeCheckingMode = "basic",
+						autoSearchPaths = true,
+						useLibraryCodeForTypes = true,
+					},
+				},
+			},
+		})
+
+		vim.lsp.config("lua_ls", {
+			settings = { Lua = { diagnostics = { globals = { "vim" } } } },
+		})
+
+		vim.lsp.config("clangd", {
+			cmd = { "clangd", "--offset-encoding=utf-16" },
+		})
+
 		require("mason-lspconfig").setup({
 			ensure_installed = {
 				"lua_ls",
@@ -62,47 +95,8 @@ return {
 				"ruff",
 				"clangd",
 			},
-
-			handlers = {
-				function(server_name)
-					require("lspconfig")[server_name].setup({
-						capabilities = capabilities,
-					})
-				end,
-				["ruff"] = function()
-					require("lspconfig").ruff.setup({
-						on_attach = function(client)
-							client.server_capabilities.hoverProvider = false
-						end,
-					})
-				end,
-				["pyright"] = function()
-					require("lspconfig").pyright.setup({
-						capabilities = capabilities,
-						settings = {
-							python = {
-								analysis = {
-									typeCheckingMode = "basic",
-									autoSearchPaths = true,
-									useLibraryCodeForTypes = true,
-								},
-							},
-						},
-					})
-				end,
-				["lua_ls"] = function()
-					require("lspconfig").lua_ls.setup({
-						capabilities = capabilities,
-						settings = { Lua = { diagnostics = { globals = { "vim" } } } },
-					})
-				end,
-				["clangd"] = function()
-					require("lspconfig").clangd.setup({
-						capabilities = capabilities,
-						cmd = { "clangd", "--offset-encoding=utf-16" },
-					})
-				end,
-			},
+			-- rust_analyzer est géré par rustaceanvim
+			automatic_enable = { exclude = { "rust_analyzer" } },
 		})
 
 		-- ====================================================================
@@ -184,8 +178,7 @@ return {
 			}),
 		})
 
-		local cmp_autopairs = require("nvim-autopairs.completion.cmp")
-		cmp.event:on("confirm_done", cmp_autopairs.on_confirm_done())
+		-- (L'intégration nvim-autopairs ↔ cmp est faite dans autopairs.lua)
 
 		-- ====================================================================
 		-- ÉTAPE 5 : GESTION DES ERREURS & RACCOURCIS
@@ -206,7 +199,7 @@ return {
 			},
 			float = {
 				border = "rounded",
-				source = "always",
+				source = true,
 			},
 			underline = true,
 			update_in_insert = false,
@@ -214,8 +207,12 @@ return {
 		})
 
 		vim.keymap.set("n", "gl", vim.diagnostic.open_float, { desc = "Voir l'erreur (Bulle)" })
-		vim.keymap.set("n", "[d", vim.diagnostic.goto_prev, { desc = "Erreur précédente" })
-		vim.keymap.set("n", "]d", vim.diagnostic.goto_next, { desc = "Erreur suivante" })
+		vim.keymap.set("n", "[d", function()
+			vim.diagnostic.jump({ count = -1, float = true })
+		end, { desc = "Erreur précédente" })
+		vim.keymap.set("n", "]d", function()
+			vim.diagnostic.jump({ count = 1, float = true })
+		end, { desc = "Erreur suivante" })
 		vim.keymap.set("n", "<leader>q", vim.diagnostic.setloclist, { desc = "Liste des erreurs" })
 
 		-- ====================================================================

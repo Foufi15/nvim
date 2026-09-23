@@ -1,51 +1,66 @@
+-- nvim-treesitter branche "main" : plus de `nvim-treesitter.configs`.
+-- On installe les parsers et on active highlight/indent nous-mêmes via un autocmd FileType.
+local ensure_installed = {
+	"c",
+	"lua",
+	"vim",
+	"vimdoc",
+	"python",
+	"markdown",
+	"markdown_inline",
+	"javascript",
+	"typescript",
+	"html",
+	"css",
+	"bash",
+	"java",
+	"rust",
+}
+
+local max_filesize = 100 * 1024 -- 100 KB
+
+local function enable_treesitter(buf, lang)
+	local ok, stats = pcall(vim.uv.fs_stat, vim.api.nvim_buf_get_name(buf))
+	if ok and stats and stats.size > max_filesize then
+		return
+	end
+	if not pcall(vim.treesitter.start, buf, lang) then
+		return
+	end
+	vim.bo[buf].indentexpr = "v:lua.require'nvim-treesitter'.indentexpr()"
+end
+
 return {
 	{
 		"nvim-treesitter/nvim-treesitter",
+		branch = "main",
 		build = ":TSUpdate",
-		lazy = false,
+		lazy = false, -- la branche main ne supporte pas le lazy-loading
 		config = function()
-			-- 1. Setup Git preference (Must be done BEFORE setup)
-			require("nvim-treesitter.install").prefer_git = true
+			local ts = require("nvim-treesitter")
+			ts.install(ensure_installed)
 
-			-- 2. Setup the configuration
-			-- We wrap this in a pcall or check to prevent startup crashes if something goes wrong
-			local status_ok, configs = pcall(require, "nvim-treesitter.configs")
-			if not status_ok then
-				return
-			end
+			vim.api.nvim_create_autocmd("FileType", {
+				group = vim.api.nvim_create_augroup("TreesitterSetup", { clear = true }),
+				callback = function(args)
+					local lang = vim.treesitter.language.get_lang(args.match)
+					if not lang then
+						return
+					end
 
-			configs.setup({
-				ensure_installed = {
-					"c",
-					"lua",
-					"vim",
-					"vimdoc",
-					"python",
-					"markdown",
-					"markdown_inline",
-					"javascript",
-					"typescript",
-					"html",
-					"css",
-					"bash",
-					"java",
-				},
-				sync_install = false,
-				auto_install = true,
-
-				highlight = {
-					enable = true,
-					disable = function(lang, buf)
-						local max_filesize = 100 * 1024 -- 100 KB
-						local ok, stats = pcall(vim.loop.fs_stat, vim.api.nvim_buf_get_name(buf))
-						if ok and stats and stats.size > max_filesize then
-							return true
-						end
-					end,
-					additional_vim_regex_highlighting = false,
-				},
-
-				indent = { enable = true },
+					if vim.list_contains(ts.get_installed(), lang) then
+						enable_treesitter(args.buf, lang)
+					elseif vim.list_contains(ts.get_available(), lang) then
+						-- équivalent de l'ancien `auto_install = true`
+						ts.install(lang):await(function()
+							vim.schedule(function()
+								if vim.api.nvim_buf_is_valid(args.buf) then
+									enable_treesitter(args.buf, lang)
+								end
+							end)
+						end)
+					end
+				end,
 			})
 		end,
 	},

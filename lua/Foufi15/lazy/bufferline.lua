@@ -20,7 +20,7 @@ return {
 				-- Définit un petit décalage pour laisser de la place à gauche
 				offsets = {
 					{
-						filetype = "NvimTree", -- Si NeoTree est ouvert
+						filetype = "neo-tree", -- Si NeoTree est ouvert
 						text = " File Explorer ",
 						text_align = "left",
 						separator = true,
